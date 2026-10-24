@@ -1,0 +1,26 @@
+name: Build & Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 跑哪些测试（fast 快线 / ui 慢线 / full 全部）
+        type: choice
+        options: [fast, ui, full]
+        default: fast
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-test-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    uses: wenjinliuu/ios-ci-workflows/.github/workflows/build-test.yml@df71d6096d6d39ea799179cb2635703548b07ae0 # v1.1.0
+    with:
+      suite: ${{ inputs.suite || '' }}

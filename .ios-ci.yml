@@ -1,0 +1,17 @@
+# EAgent2 的 CI 配置：所有工作流都从这里读设置。
+# 完整说明见 ios-ci-workflows 的 docs/config.md。
+
+workdir: .
+project: EAgent2.xcodeproj
+scheme: EAgent2
+bundle_id: com.qweq-1.eagent2
+display_name: 'EAgent'
+generate_command: xcodegen generate
+
+toolchain:
+  xcode: '26.6'
+  simulator: iPhone 17 Pro
+  ios: '26.4'
+
+build_test:
+  accessibility_audit: warn
