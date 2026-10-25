@@ -12,7 +12,11 @@ struct LogTabView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Spacer()
-                if case .finished(let s) = engine.state {
+                if case .paused(let reason, let s) = engine.state {
+                    Text("已暂停(\(reason.title))：\(String(s.prefix(30)))")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                } else if case .finished(let s) = engine.state {
                     Text("已完成：\(String(s.prefix(40)))")
                         .font(.caption)
                         .foregroundColor(.green)

@@ -20,6 +20,19 @@ struct SettingsTabView: View {
                 Section("运行参数") {
                     Stepper("单轮等待上限 \(settings.timeoutSeconds) 秒", value: $settings.timeoutSeconds, in: 30...600, step: 30)
                     Stepper("最大轮数 \(settings.maxIterations)", value: $settings.maxIterations, in: 2...50)
+                    Stepper("同一工具连续失败 \(settings.failureStreakLimit) 次后暂停", value: $settings.failureStreakLimit, in: 1...10)
+                }
+
+                Section("自动截停") {
+                    Text("出现下列情况时，Agent 会主动停下来等你补充指令：")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("· 模型表示无法完成（缺权限、缺信息、做不到）")
+                    Text("· 模型回复没有实质内容（空回复、只寒暄）")
+                    Text("· 同一个工具连续失败多次（在绕圈）")
+                    Text("· 达到最大轮数仍未得出结论")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
 
                 Section("工作区") {

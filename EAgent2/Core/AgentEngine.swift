@@ -11,11 +11,26 @@ public final class AgentEngine: ObservableObject {
         case toolRunning(String)
         case finished(String)
         case failed(String)
+        /// 主动暂停：模型说做完了/做不到/没进展，或连续失败。等待用户补充指令。
+        case paused(StopReason, String)
     }
 
     @Published public private(set) var state: State = .idle
     @Published public private(set) var iteration: Int = 0
     @Published public private(set) var actionCount: Int = 0
+    /// 暂停时的上下文，保存以便「继续」时无缝接着跑
+    @Published public private(set) var pauseContext: PauseContext?
+
+    /// 暂停上下文：保留最后一轮的提示词与历史，用于续跑
+    public struct PauseContext {
+        public var reason: StopReason
+        public var summary: String
+        public var lastPrompt: String
+        public var lastReply: String
+        public var round: Int
+        public var failedStreak: Int
+        public var failedTool: String
+    }
 
     private let bridge: WebBridge
     private let gate: SecurityGate
@@ -29,6 +44,9 @@ public final class AgentEngine: ObservableObject {
     /// 不这样做的话，stop() 把 stopRequested 置 true、随后的 start() 又置回 false，
     /// 被取消的旧任务会「复活」并与新任务并发，两边同时向 SecurityGate 请求审批 → 重复 resume → 崩溃。
     private var runID = 0
+    /// 连续失败计数（同一工具）
+    private var failedStreak = 0
+    private var failedTool = ""
 
     public init(bridge: WebBridge, gate: SecurityGate, log: AgentLogStore, settings: AppSettings) {
         self.bridge = bridge
@@ -87,7 +105,7 @@ public final class AgentEngine: ObservableObject {
 
     // MARK: - 主循环
 
-    private func run(userTask: String, runID myID: Int) async {
+    private func run(userTask: String, runID myID: Int, firstRound: Int = 1) async {
         guard isCurrent(myID) else { return }
         let systemPrompt = PromptBuilder.systemPrompt(
             workspacePath: router.workspaceURL.path,
@@ -96,8 +114,9 @@ public final class AgentEngine: ObservableObject {
         )
         var prompt = PromptBuilder.taskMessage(userTask: userTask, systemPrompt: systemPrompt)
         var first = true
+        var lastReplyText = ""
 
-        for round in 1...settings.maxIterations {
+        for round in firstRound...max(settings.maxIterations, firstRound) {
             if !isCurrent(myID) { return }
             iteration = round
             state = .sending
@@ -171,10 +190,25 @@ public final class AgentEngine: ObservableObject {
                 finishFailed("没有读到 DeepSeek 的回复文本（页面结构可能变化）")
                 return
             }
+            lastReplyText = reply
             log.assistant(reply)
 
             switch ToolCallCodec.parse(from: reply) {
             case .none:
+                // —— 自动截停判定 ——
+                // 模型没有再请求工具，说明它认为这一轮就是最终答复。
+                // 但若它明说「做不到 / 无法完成」，不该当作成功收工，
+                // 应暂停下来告诉用户缺什么，等补充指令后再继续。
+                if StopPolicy.looksImpossible(reply) {
+                    pause(reason: .impossible, summary: reply, prompt: prompt, reply: reply, round: round, runID: myID)
+                    return
+                }
+                if StopPolicy.looksIdle(reply) {
+                    pause(reason: .idle,
+                          summary: reply.isEmpty ? "模型没有给出任何有效内容" : reply,
+                          prompt: prompt, reply: reply, round: round, runID: myID)
+                    return
+                }
                 finishSuccess(reply)
                 return
 
@@ -183,6 +217,12 @@ public final class AgentEngine: ObservableObject {
                 prompt = PromptBuilder.malformedMessage(why, lastOutput: reply)
 
             case .found(let call):
+                // 工具名不在目录里 → 多半是把系统提示词里的示例当成了工具块
+                if !ToolCatalog.names.contains(call.tool) {
+                    log.system("⚠️ 识别到的工具名「\(call.tool)」不存在，已忽略该轮工具块（可能是提示词回显被误读）")
+                    finishFailed("识别到的工具「\(call.tool)」不是可用工具。可能是网页回读到的是本 App 发出的系统提示词，而不是 DeepSeek 的回复；请点「刷新」后重试。")
+                    return
+                }
                 let args = SecurityGate.prettyArgs(call.args)
                 let head = "🔧 [\(round)] \(call.tool)"
                 log.system(head + "\n" + args + (call.note.map { "\n意图：\($0)" } ?? ""))
@@ -216,11 +256,84 @@ public final class AgentEngine: ObservableObject {
                     let result = await router.call(call)
                     actionCount += 1
                     log.tool(name: call.tool, result: result)
+
+                    // —— 连续失败熔断 ——
+                    // 同一个工具连续失败多次，说明模型在绕圈，停下来问用户。
+                    if StopPolicy.isFailedResult(result) {
+                        if call.tool == failedTool { failedStreak += 1 } else { failedTool = call.tool; failedStreak = 1 }
+                        if StopPolicy.shouldPauseOnFailure(tool: call.tool, streak: failedStreak,
+                                                          threshold: settings.failureStreakLimit) {
+                            pause(reason: .repeatedFailure(tool: call.tool, count: failedStreak),
+                                  summary: "工具「\(call.tool)」连续失败 \(failedStreak) 次，已暂停以免继续绕圈。",
+                                  prompt: prompt, reply: reply, round: round, runID: myID)
+                            return
+                        }
+                    } else {
+                        failedStreak = 0
+                        failedTool = ""
+                    }
+
                     prompt = PromptBuilder.feedMessage(tool: call.tool, result: result)
                 }
             }
         }
-        finishFailed("达到最大轮数（\(settings.maxIterations)），任务被强制结束。可在设置里调大。")
+        pause(reason: .maxRounds,
+              summary: "已达到最大轮数（\(settings.maxIterations)）仍未得出结论，已暂停。可在设置里调大轮数，或直接给出补充指令让它继续。",
+              prompt: prompt, reply: lastReplyText, round: settings.maxIterations, runID: myID)
+    }
+
+    // MARK: - 暂停 / 继续
+
+    /// 暂停任务：保存上下文，等用户补充指令后继续。
+    private func pause(reason: StopReason, summary: String, prompt: String, reply: String, round: Int, runID myID: Int) {
+        guard isCurrent(myID) else { return }
+        state = .paused(reason, summary)
+        pauseContext = PauseContext(
+            reason: reason,
+            summary: summary,
+            lastPrompt: prompt,
+            lastReply: reply,
+            round: round,
+            failedStreak: failedStreak,
+            failedTool: failedTool
+        )
+        log.system("\(reason.symbol) 自动暂停：\(reason.title)\n\(summary)")
+        task = nil
+    }
+
+    /// 用户补充指令后续跑：把补充内容喂给模型，从暂停处继续。
+    public func resume(with instruction: String) {
+        guard let ctx = pauseContext else { return }
+        let extra = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !extra.isEmpty else { return }
+        pauseContext = nil
+        stop()
+        runID += 1
+        let myID = runID
+        stopRequested = false
+        failedStreak = 0
+        failedTool = ""
+        state = .sending
+        log.system("▶️ 继续执行：\(extra)")
+
+        // 续跑提示：保留上一轮结论 + 用户补充，要求模型接着做
+        let followUp = PromptBuilder.resumeMessage(
+            previousSummary: ctx.summary,
+            userInstruction: extra,
+            lastPrompt: ctx.lastPrompt
+        )
+        task = Task { [weak self] in
+            await self?.run(userTask: followUp, runID: myID, firstRound: ctx.round + 1)
+        }
+    }
+
+    /// 放弃当前任务，回到初始状态。
+    public func abandon() {
+        stop()
+        pauseContext = nil
+        state = .idle
+        iteration = 0
+        actionCount = 0
     }
 
     // MARK: - 收尾

@@ -29,6 +29,11 @@ struct ChatTabView: View {
                     }
                 }
             }
+            if case .paused(let reason, let summary) = engine.state {
+                PausePanel(reason: reason, summary: summary)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 6)
+            }
             InputBar(text: $taskText, onSend: send)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
@@ -91,7 +96,9 @@ private struct StatusBarView: View {
                  color: bridge.loginDetected ? .green : .red)
             Pill(label: bridge.inputReady ? "输入框就绪" : "输入框未就绪",
                  color: bridge.inputReady ? .blue : .gray)
-            if bridge.generating || engine.isRunning {
+            if case .paused(let reason, _) = engine.state {
+                Pill(label: "已暂停 · \(reason.title)", color: .orange)
+            } else if bridge.generating || engine.isRunning {
                 Pill(label: stateLabel, color: .orange)
             }
             Spacer()
@@ -109,6 +116,7 @@ private struct StatusBarView: View {
         case .sending: return "发送中"
         case .waitingReply: return "等 DeepSeek 回复"
         case .toolRunning(let t): return "执行 \(t)"
+        case .paused(let r, _): return "已暂停 · \(r.title)"
         default: return bridge.generating ? "网页生成中" : "运行中"
         }
     }
@@ -172,5 +180,52 @@ private struct InputBar: View {
                 .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
+    }
+}
+
+
+/// 暂停面板：Agent 主动停下来时，给出原因、结论，并允许用户补充指令后续跑。
+private struct PausePanel: View {
+    let reason: StopReason
+    let summary: String
+    @EnvironmentObject var engine: AgentEngine
+    @State private var extra = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text(reason.symbol)
+                Text("已暂停 · \(reason.title)")
+                    .font(.subheadline.bold())
+                Spacer()
+                Button("放弃任务") { engine.abandon() }
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
+            if !summary.isEmpty {
+                Text(summary)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(4)
+            }
+            HStack(spacing: 8) {
+                TextField("补充信息或新指令，让它继续", text: $extra, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...3)
+                    .focused($focused)
+                Button("继续") {
+                    focused = false
+                    let t = extra
+                    extra = ""
+                    engine.resume(with: t)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(extra.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(10)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }

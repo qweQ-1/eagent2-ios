@@ -51,11 +51,44 @@ public enum ToolCallCodec {
             }
         }
 
-        // 2) 兜底：全文第一个平衡 JSON 对象且含 "tool"
-        if let json = firstBalancedJSONObject(in: trimmed), json.contains("\"tool\"") {
+        // 2) 兜底：全文最后一个平衡 JSON 对象且含 "tool"
+        //    用「最后一个」而不是「第一个」：正文里可能先出现系统提示词回显的示例，
+        //    真正的工具块在末尾。
+        if let json = lastBalancedJSONObject(in: trimmed), json.contains("\"tool\"") {
             return decode(json)
         }
         return .none
+    }
+
+    /// 从字符串中取出最后一个括号配平的 JSON 对象（忽略字符串内的括号与转义）
+    static func lastBalancedJSONObject(in text: String) -> String? {
+        let chars = Array(text)
+        var depth = 0
+        var start = -1
+        var inString = false
+        var escaped = false
+        var last: String?
+        for i in 0..<chars.count {
+            let c = chars[i]
+            if inString {
+                if escaped { escaped = false }
+                else if c == "\\" { escaped = true }
+                else if c == "\"" { inString = false }
+                continue
+            }
+            if c == "\"" { inString = true; continue }
+            if c == "{" {
+                depth += 1
+                if depth == 1 { start = i }
+            } else if c == "}" {
+                depth -= 1
+                if depth == 0, start >= 0 {
+                    last = String(chars[start...i])
+                }
+                if depth < 0 { depth = 0; start = -1 }
+            }
+        }
+        return last
     }
 
     /// 从字符串中取出第一个括号配平的 JSON 对象（忽略字符串内的括号与转义）

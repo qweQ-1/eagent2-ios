@@ -139,16 +139,72 @@ public enum BridgeScript {
     }
     return false;
   }
+  // 记录我们最近一次发出去的文本，用于识别「回显」——把自己发的用户消息
+  // 误当成 DeepSeek 的回复，会导致工具块解析读到系统提示词里的示例。
+  function markSent(text) {
+    try { window.__eagentLastSent = String(text || ''); } catch (e) {}
+  }
+  function isOwnEcho(t) {
+    try {
+      var sent = window.__eagentLastSent;
+      if (!sent) { return false; }
+      var probe = sent.slice(0, 24);
+      if (probe.length < 4) { return false; }
+      return t.indexOf(probe) === 0;
+    } catch (e) { return false; }
+  }
+
+  // 候选的「助手消息」元素，按文档顺序返回。
+  // 注意：不要用 [class*="message"]——那会连用户消息一起匹配上。
+  function assistantCandidates() {
+    var sels = [
+      '[data-message-author-role="assistant"]',
+      '.ds-markdown',
+      '[class*="markdown"]'
+    ];
+    var out = [];
+    for (var si = 0; si < sels.length; si++) {
+      var els = document.querySelectorAll(sels[si]);
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        if (out.indexOf(el) === -1) { out.push(el); }
+      }
+    }
+    // 按在文档中的位置排序，保证「最后一条」判断正确
+    out.sort(function (a, b) {
+      if (!a.compareDocumentPosition) { return 0; }
+      if (a === b) { return 0; }
+      return (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1;
+    });
+    return out;
+  }
+
+  // 判断某个元素是否属于「用户消息」（我们发出去的那条）。
+  // 优先看 DOM 上的角色标记，其次看文本是否与我们发出的内容吻合。
+  function isUserMessage(el) {
+    try {
+      var role = el.getAttribute && el.getAttribute('data-message-author-role');
+      if (role === 'user') { return true; }
+      var cls = (el.className && String(el.className)) || '';
+      if (/user|question|input/i.test(cls) && !/assistant|markdown|answer/i.test(cls)) { return true; }
+    } catch (e) {}
+    return false;
+  }
+
+  // 取「最后一条」助手回复，而不是「最长的一条」。
+  // 最长的往往是我们自己回灌的那条用户消息（内含系统提示词），会导致工具块误解析。
   function lastReplyText() {
-    var list = document.querySelectorAll('.ds-markdown, [class*="markdown"], [class*="message"]');
-    var best = '';
-    for (var i = 0; i < list.length; i++) {
+    var list = assistantCandidates();
+    for (var i = list.length - 1; i >= 0; i--) {
       var el = list[i];
       if (!visible(el)) { continue; }
+      if (isUserMessage(el)) { continue; }
       var t = (el.innerText || '').trim();
-      if (t.length > best.length) { best = t; }
+      if (!t) { continue; }
+      if (isOwnEcho(t)) { continue; }
+      return t;
     }
-    return best;
+    return '';
   }
   function clickStop() {
     var els = document.querySelectorAll('button, [role="button"], [class*="stop"]');
@@ -176,6 +232,7 @@ public enum BridgeScript {
       var ta = findTextarea();
       if (!ta) { return JSON.stringify({ ok: false, why: 'no-textarea' }); }
       setValue(ta, text);
+      markSent(text);
       var btn = null;
       try { btn = findSendButton(ta); } catch (e) {}
       var clicked = false;

@@ -54,12 +54,15 @@ public final class AppSettings: ObservableObject {
         public static let gateSeconds = "eagent.gateSeconds"
         public static let timeoutSeconds = "eagent.timeoutSeconds"
         public static let maxIterations = "eagent.maxIterations"
+        public static let failureStreakLimit = "eagent.failureStreakLimit"
     }
 
     @Published public var gateMode: GateMode { didSet { store(gateMode.rawValue, Keys.gateMode) } }
     @Published public var gateSeconds: Int { didSet { store(gateSeconds, Keys.gateSeconds) } }
     @Published public var timeoutSeconds: Int { didSet { store(timeoutSeconds, Keys.timeoutSeconds) } }
     @Published public var maxIterations: Int { didSet { store(maxIterations, Keys.maxIterations) } }
+    /// 同一工具连续失败多少次后自动暂停
+    @Published public var failureStreakLimit: Int { didSet { store(failureStreakLimit, Keys.failureStreakLimit) } }
 
     private let defaults = UserDefaults.standard
 
@@ -69,6 +72,7 @@ public final class AppSettings: ObservableObject {
         gateSeconds = Self.clamp(defaults.integer(forKey: Keys.gateSeconds), min: 1, max: 60, fallback: 5)
         timeoutSeconds = Self.clamp(defaults.integer(forKey: Keys.timeoutSeconds), min: 30, max: 600, fallback: 240)
         maxIterations = Self.clamp(defaults.integer(forKey: Keys.maxIterations), min: 2, max: 50, fallback: 20)
+        failureStreakLimit = Self.clamp(defaults.integer(forKey: Keys.failureStreakLimit), min: 1, max: 10, fallback: 3)
     }
 
     private func store(_ v: Int, _ k: String) { defaults.set(v, forKey: k) }

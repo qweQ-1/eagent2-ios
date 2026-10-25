@@ -59,6 +59,21 @@ public struct PromptBuilder {
         """
     }
 
+    /// 暂停后用户补充指令：把上轮结论 + 补充内容一起给模型，让它接着做。
+    public static func resumeMessage(previousSummary: String, userInstruction: String, lastPrompt: String) -> String {
+        var s = """
+        【继续执行】上一轮你给出的结论如下：
+        \(previousSummary.prefix(2000))
+
+        用户补充了新的信息/指令：
+        \(userInstruction)
+
+        请基于以上信息继续完成任务。如果还需要使用工具，只输出一个 eagent 工具块；
+        如果已经完成或确实无法完成，请直接用自然语言说明（若无法完成，请说明具体缺什么）。
+        """
+        return s
+    }
+
     public static func malformedMessage(_ reason: String, lastOutput: String) -> String {
         var s = "【系统提示】你上一轮的 eagent 工具块无法解析：\(reason)。请严格按协议重新只输出一个 eagent JSON 块；若不想执行工具，请直接文字答复。"
         if !lastOutput.isEmpty {
