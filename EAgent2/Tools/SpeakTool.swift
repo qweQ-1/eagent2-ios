@@ -26,7 +26,6 @@ public enum SpeakTool {
         let synth = AVSpeechSynthesizer()
         let box = FinishBox()
         synth.delegate = box
-        synth.speak(utterance(t, rate: rate(rawRate)))
 
         let timeoutTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
@@ -35,7 +34,9 @@ public enum SpeakTool {
         }
 
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            box.continuation = c
+            // 先挂上 continuation，再开始朗读：避免「读完还没挂上」导致永久等待
+            box.attach(c)
+            synth.speak(utterance(t, rate: rate(rawRate)))
         }
         timeoutTask.cancel()
         return FilesTool.ok(["spoken": t, "rate": String(rate(rawRate))])
@@ -43,14 +44,24 @@ public enum SpeakTool {
 }
 
 /// 把 AVSpeechSynthesizer 回调桥接到 Swift 并发，且幂等（完成/超时都只会 resume 一次）
-final class FinishBox: NSObject, AVSpeechSynthesizerDelegate {
-    var continuation: CheckedContinuation<Void, Never>?
-    private var fired = false
+final class FinishBox: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var finished = false
+
+    /// 挂载 continuation；若朗读已提前结束则立即恢复
+    func attach(_ c: CheckedContinuation<Void, Never>) {
+        if finished {
+            c.resume()
+            return
+        }
+        continuation = c
+    }
 
     func finishIfNeeded() {
-        guard !fired else { return }
-        fired = true
+        guard !finished else { return }
+        finished = true
         continuation?.resume()
+        continuation = nil
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {

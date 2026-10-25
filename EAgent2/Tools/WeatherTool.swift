@@ -104,25 +104,34 @@ public final class LocationProvider: NSObject, CLLocationManagerDelegate {
                       "accuracy_m": String(format: "%.0f", loc.horizontalAccuracy)])
     }
 
-    public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        last = locations.last
-        if let cont = cont, !cont.done, let loc = last {
-            cont.done = true
-            self.cont = nil
-            cont.cont.resume(returning: ok(loc))
+    // CLLocationManagerDelegate 的回调是 nonisolated 要求，必须显式标注并切回主线程
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let loc = locations.last else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.last = loc
+            if let cont = self.cont, !cont.done {
+                cont.done = true
+                self.cont = nil
+                cont.cont.resume(returning: self.ok(loc))
+            }
         }
     }
 
-    public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        if let cont = cont, !cont.done {
-            cont.done = true
-            self.cont = nil
-            cont.cont.resume(returning: FilesTool.err("定位失败：" + error.localizedDescription))
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        let msg = "定位失败：" + error.localizedDescription
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if let cont = self.cont, !cont.done {
+                cont.done = true
+                self.cont = nil
+                cont.cont.resume(returning: FilesTool.err(msg))
+            }
         }
     }
 }
 
-final class CheckedContinuationHolder {
+final class CheckedContinuationHolder: @unchecked Sendable {
     let cont: CheckedContinuation<String, Never>
     var done = false
     init(_ c: CheckedContinuation<String, Never>) { cont = c }
