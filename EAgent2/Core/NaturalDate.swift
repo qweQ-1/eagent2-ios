@@ -97,7 +97,6 @@ public enum NaturalDate {
         let base = cal.startOfDay(for: now)
         guard let day = cal.date(byAdding: .day, value: dayOffset, to: base) else { return nil }
         if timeSet || weekdayTarget != nil {
-            if hour < 12 && isMorning { hour = hour } // 上午保持
             guard let at = cal.date(bySettingHour: hour, minute: minute, second: 0, of: day) else { return nil }
             return at
         }

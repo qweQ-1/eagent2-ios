@@ -105,7 +105,7 @@ public final class LocationProvider: NSObject, CLLocationManagerDelegate {
     }
 
     // CLLocationManagerDelegate 的回调是 nonisolated 要求，必须显式标注并切回主线程
-    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+    public nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }

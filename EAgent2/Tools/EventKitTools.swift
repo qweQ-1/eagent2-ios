@@ -67,8 +67,8 @@ public enum EventKitTools {
     static func authorize(store: EKEventStore, type: EKEntityType) async -> Bool {
         if #available(iOS 17.0, *) {
             switch type {
-            case .event: return await request { store.requestFullAccessToEvents() }
-            case .reminder: return await request { store.requestFullAccessToReminders() }
+            case .event: return await request { try await store.requestFullAccessToEvents() }
+            case .reminder: return await request { try await store.requestFullAccessToReminders() }
             default: break
             }
         }

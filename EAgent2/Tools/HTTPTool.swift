@@ -17,16 +17,23 @@ public enum HTTPTool {
         return false
     }
 
+    /// 构造请求失败时的错误（携带可读信息）
+    public struct Failure: Error, CustomStringConvertible {
+        public let message: String
+        public init(_ message: String) { self.message = message }
+        public var description: String { message }
+    }
+
     /// 构造 & 校验请求；返回错误信息或请求。
-    public static func makeRequest(urlString: String, method: String, body: String?, headers: [String: String]) -> Result<URLRequest, String> {
+    public static func makeRequest(urlString: String, method: String, body: String?, headers: [String: String]) -> Result<URLRequest, Failure> {
         guard let url = URL(string: urlString.trimmingCharacters(in: .whitespaces)) else {
-            return .failure("URL 不合法")
+            return .failure(Failure("URL 不合法"))
         }
         guard let scheme = url.scheme?.lowercased(), scheme == "https" else {
-            return .failure("仅允许 https 请求")
+            return .failure(Failure("仅允许 https 请求"))
         }
-        guard let host = url.host, !host.isEmpty else { return .failure("缺少主机名") }
-        if isBlockedHost(host) { return .failure("禁止访问内网/本机地址：" + host) }
+        guard let host = url.host, !host.isEmpty else { return .failure(Failure("缺少主机名")) }
+        if isBlockedHost(host) { return .failure(Failure("禁止访问内网/本机地址：" + host)) }
         var req = URLRequest(url: url, timeoutInterval: 15)
         let m = method.trimmingCharacters(in: .whitespaces).uppercased()
         req.httpMethod = (m == "GET" || m == "POST" || m == "PUT" || m == "DELETE") ? m : "GET"

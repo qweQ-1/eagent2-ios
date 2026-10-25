@@ -39,7 +39,7 @@ public final class SecurityGate: ObservableObject {
         pending = PendingRequest(
             tool: tool,
             note: note,
-            argsText: prettyArgs(args),
+            argsText: Self.prettyArgs(args),
             index: index,
             total: total
         )

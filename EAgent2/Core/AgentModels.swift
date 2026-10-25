@@ -56,7 +56,7 @@ public final class AppSettings: ObservableObject {
         public static let maxIterations = "eagent.maxIterations"
     }
 
-    @Published public var gateMode: GateMode { didSet { store(GateMode.gateMode.rawValue, Keys.gateMode) } }
+    @Published public var gateMode: GateMode { didSet { store(gateMode.rawValue, Keys.gateMode) } }
     @Published public var gateSeconds: Int { didSet { store(gateSeconds, Keys.gateSeconds) } }
     @Published public var timeoutSeconds: Int { didSet { store(timeoutSeconds, Keys.timeoutSeconds) } }
     @Published public var maxIterations: Int { didSet { store(maxIterations, Keys.maxIterations) } }

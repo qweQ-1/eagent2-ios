@@ -1,18 +1,5 @@
 import Foundation
 
-/// 工具目录项（喂给 PromptBuilder 生成系统提示词）
-public struct ToolSpec {
-    public var name: String
-    public var summary: String
-    public var argsDoc: String
-
-    public init(name: String, summary: String, argsDoc: String) {
-        self.name = name
-        self.summary = summary
-        self.argsDoc = argsDoc
-    }
-}
-
 /// 工具路由：从 ToolCall 分发到原生实现，统一返回 JSON 字符串。
 @MainActor
 public final class ToolRouter {

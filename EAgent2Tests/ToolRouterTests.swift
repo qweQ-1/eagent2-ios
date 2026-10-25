@@ -107,7 +107,7 @@ final class ToolRouterTests: XCTestCase {
         }
         switch HTTPTool.makeRequest(urlString: "https://127.0.0.1/x", method: "GET", body: nil, headers: [:]) {
         case .success: XCTFail("内网应被拒绝")
-        case .failure(let e): XCTAssertTrue(e.contains("内网"))
+        case .failure(let e): XCTAssertTrue(e.message.contains("内网"))
         }
         switch HTTPTool.makeRequest(urlString: "https://example.com/a", method: "PATCH", body: "{}", headers: ["X-A": "b"]) {
         case .success(let req):
