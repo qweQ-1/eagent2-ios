@@ -16,8 +16,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: build-test-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  # 带 run id：避免上一个卡死的 run 占着同一个组，把新 run 一起堵住
+  group: build-test-${{ github.head_ref || github.ref_name }}-${{ github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   test:
