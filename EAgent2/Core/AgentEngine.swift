@@ -25,13 +25,18 @@ public final class AgentEngine: ObservableObject {
 
     private var task: Task<Void, Never>?
     private var stopRequested = false
+    /// 运行代号：每次 start 自增。旧任务发现自己代号过期就立刻退出。
+    /// 不这样做的话，stop() 把 stopRequested 置 true、随后的 start() 又置回 false，
+    /// 被取消的旧任务会「复活」并与新任务并发，两边同时向 SecurityGate 请求审批 → 重复 resume → 崩溃。
+    private var runID = 0
 
     public init(bridge: WebBridge, gate: SecurityGate, log: AgentLogStore, settings: AppSettings) {
         self.bridge = bridge
         self.gate = gate
         self.log = log
         self.settings = settings
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
         self.router = ToolRouter(workspaceURL: docs.appendingPathComponent("workspace"))
     }
 
@@ -56,25 +61,34 @@ public final class AgentEngine: ObservableObject {
         let t = userTask.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
         stop()
+        runID += 1
+        let myID = runID
         stopRequested = false
         state = .sending
         log.user(t)
         task = Task { [weak self] in
-            await self?.run(userTask: t)
+            await self?.run(userTask: t, runID: myID)
         }
     }
 
     public func stop() {
         stopRequested = true
+        runID += 1   // 作废当前运行代号，旧任务会在下一个检查点退出
         gate.resolve(.abort)
         Task { await bridge.stopGeneration() }
         task?.cancel()
         task = nil
     }
 
+    /// 当前运行是否仍然有效（未被新任务顶替、未被停止）
+    private func isCurrent(_ id: Int) -> Bool {
+        id == runID && !stopRequested
+    }
+
     // MARK: - 主循环
 
-    private func run(userTask: String) async {
+    private func run(userTask: String, runID myID: Int) async {
+        guard isCurrent(myID) else { return }
         let systemPrompt = PromptBuilder.systemPrompt(
             workspacePath: router.workspaceURL.path,
             tools: ToolRouter.specs,
@@ -84,7 +98,7 @@ public final class AgentEngine: ObservableObject {
         var first = true
 
         for round in 1...settings.maxIterations {
-            if stopRequested { return }
+            if !isCurrent(myID) { return }
             iteration = round
             state = .sending
 
@@ -112,7 +126,7 @@ public final class AgentEngine: ObservableObject {
             var collected: String?
 
             while true {
-                if stopRequested || Task.isCancelled {
+                if !isCurrent(myID) || Task.isCancelled {
                     finishStopped("用户已停止")
                     return
                 }
@@ -173,7 +187,11 @@ public final class AgentEngine: ObservableObject {
                 if settings.gateMode == .auto {
                     decision = .run
                 } else {
+                    // 审批前再次确认本次运行仍然有效：否则旧任务会和新任务同时向安全门请求，
+                    // 造成 continuation 状态错乱。
+                    guard isCurrent(myID) else { return }
                     decision = await gate.request(tool: call.tool, note: call.note, args: call.args, index: round, total: settings.maxIterations)
+                    guard isCurrent(myID) else { return }
                 }
 
                 switch decision {

@@ -6,12 +6,14 @@ struct SecuritySheet: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var gate: SecurityGate
     @State private var seconds: Int
+    @State private var stopped = false
     @State private var timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     @Environment(\.dismiss) private var dismiss
 
     init(request: SecurityGate.PendingRequest) {
         self.request = request
-        _seconds = State(initialValue: AppSettings().gateSeconds)
+        // 初始值先用默认值，真正的秒数在 appear 时从 settings 读取（init 里拿不到 environment）
+        _seconds = State(initialValue: 5)
     }
 
     var body: some View {
@@ -77,7 +79,12 @@ struct SecuritySheet: View {
                 }
             }
             .padding(16)
+            .onAppear {
+                // 用用户实际设置初始化倒计时
+                seconds = settings.gateSeconds
+            }
             .onReceive(timer) { _ in
+                guard !stopped else { return }
                 if seconds > 0 { seconds -= 1 }
                 if seconds <= 0 {
                     stopTimer()
@@ -90,7 +97,12 @@ struct SecuritySheet: View {
         .interactiveDismissDisabled()
     }
 
-    private func stopTimer() { timer.upstream.connect().cancel() }
+    /// 停止倒计时：取消发布者。仅取消订阅不足以作废已排队的回调，
+    /// 因此额外用 stopped 标志位保证「倒计时自动执行」与「按钮点击」不会重复 resolve。
+    private func stopTimer() {
+        stopped = true
+        timer.upstream.connect().cancel()
+    }
 
     private var toolLine: String {
         "[\(request.index)/\(request.total)] \(request.tool)"

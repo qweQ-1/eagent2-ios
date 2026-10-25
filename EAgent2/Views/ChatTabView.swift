@@ -6,29 +6,78 @@ struct ChatTabView: View {
     @EnvironmentObject var engine: AgentEngine
     @EnvironmentObject var settings: AppSettings
     @State private var taskText = ""
+    /// 是否已加载网页。低内存设备上一进来就加载重网页极易被系统回收 → 闪退。
+    /// 改为「点按进入」后才加载。
+    @State private var webLoaded = false
+    @State private var showLoadButton = true
 
     var body: some View {
         VStack(spacing: 0) {
             StatusBarView()
-            DeepSeekWebView(bridge: bridge)
-                .overlay(alignment: .top) {
-                    if engine.isRunning {
-                        RunBanner(engine: engine)
-                            .padding(.top, 6)
+            ZStack {
+                if webLoaded {
+                    DeepSeekWebView(bridge: bridge)
+                        .overlay(alignment: .top) {
+                            if engine.isRunning {
+                                RunBanner(engine: engine)
+                                    .padding(.top, 6)
+                            }
+                        }
+                } else {
+                    PlaceholderView {
+                        webLoaded = true
                     }
                 }
+            }
             InputBar(text: $taskText, onSend: send)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
         }
         .background(Color(.systemGroupedBackground))
-        .onAppear { bridge.ensureChatPage() }
+        .onAppear { }
     }
 
     private func send() {
         let t = taskText
         taskText = ""
-        engine.start(userTask: t)
+        if !webLoaded {
+            // 先确保网页已加载，再发送任务
+            webLoaded = true
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                engine.start(userTask: t)
+            }
+        } else {
+            engine.start(userTask: t)
+        }
+    }
+}
+
+/// 未加载网页时的占位视图：给出明确入口，避免一进页面就吃满内存。
+private struct PlaceholderView: View {
+    let onLoad: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "globe")
+                .font(.system(size: 44))
+                .foregroundColor(.secondary)
+            Text("DeepSeek 聊天页尚未加载")
+                .font(.headline)
+            Text("在低内存设备上一进来就加载重网页极易被系统回收 → 闪退。\n需要对话时再点下面的按钮加载。")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 30)
+            Button {
+                onLoad()
+            } label: {
+                Label("加载 DeepSeek 页面", systemImage: "arrow.down.circle")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGroupedBackground))
     }
 }
 

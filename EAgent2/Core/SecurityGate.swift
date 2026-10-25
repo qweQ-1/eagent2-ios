@@ -17,6 +17,7 @@ public enum GatePolicy {
     }
 }
 
+@MainActor
 public final class SecurityGate: ObservableObject {
     public struct PendingRequest: Identifiable, Equatable {
         public let id = UUID()
@@ -34,8 +35,15 @@ public final class SecurityGate: ObservableObject {
 
     public init() {}
 
+    /// 请求审批。注意：resume 同一个 continuation 两次会直接触发 Swift 运行时 fatalError，
+    /// 因此必须保证「谁先到谁赢」，后来的请求只拿到 .abort。
     @MainActor
     public func request(tool: String, note: String?, args: [String: String], index: Int, total: Int) async -> GateDecision {
+        // 已有未决请求：说明上一次没被正确收尾，直接中止本次，避免 continuation 泄漏与重复 resume
+        if let existing = cont {
+            cont = nil
+            existing.resume(returning: .abort)
+        }
         pending = PendingRequest(
             tool: tool,
             note: note,
@@ -48,10 +56,12 @@ public final class SecurityGate: ObservableObject {
         }
     }
 
+    /// 幂等解析：只有第一次生效，重复调用（倒计时 + 按钮点击同时发生）不会重复 resume。
     public func resolve(_ decision: GateDecision) {
         pending = nil
-        cont?.resume(returning: decision)
+        guard let c = cont else { return }
         cont = nil
+        c.resume(returning: decision)
     }
 
     static func prettyArgs(_ args: [String: String]) -> String {

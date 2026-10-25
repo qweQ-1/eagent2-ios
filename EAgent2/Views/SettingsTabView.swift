@@ -47,6 +47,20 @@ struct SettingsTabView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
+
+                Section("诊断") {
+                    LabeledContent("上次会话", value: CrashGuard.previousRunCrashed ? "异常中断" : "正常")
+                    if let c = CrashGuard.lastCrashText {
+                        Text(c)
+                            .font(.caption2.monospaced())
+                            .foregroundColor(.red)
+                            .textSelection(.enabled)
+                    }
+                    Button("清除崩溃记录") {
+                        CrashGuard.clearLastCrash()
+                    }
+                    .font(.caption)
+                }
             }
             .navigationTitle("设置")
         }
