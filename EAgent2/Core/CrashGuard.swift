@@ -97,6 +97,6 @@ public enum CrashGuard {
     }
 
     public static func clearLastCrash() {
-        try? FileManager.default.removeItem(at: docs().appendingPathComponent(crashFile))
+        try? FileManager.default.removeItem(at: eagentDocsURL().appendingPathComponent(crashFile))
     }
 }
