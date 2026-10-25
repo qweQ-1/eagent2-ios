@@ -43,7 +43,7 @@ final class ToolCallCodecTests: XCTestCase {
     }
 
     func testNestedBracesAndBracesInStrings() {
-        let text = "```eagent\n{\"tool\":\"write_file\",\"args\":{\"path\":\"x.json\",\"content\":\"{\\\"a\\\": 1}\"},\"note\":\"含 }\`\` 字符串\"}\n```"
+        let text = "```eagent\n{\"tool\":\"write_file\",\"args\":{\"path\":\"x.json\",\"content\":\"{\\\"a\\\": 1}\"},\"note\":\"含 }`` 字符串\"}\n```"
         guard case .found(let call) = ToolCallCodec.parse(from: text) else { return XCTFail("期望 found，实际: \(ToolCallCodec.parse(from: text))") }
         XCTAssertEqual(call.tool, "write_file")
         XCTAssertEqual(call.args["content"], "{\"a\": 1}")
@@ -68,7 +68,7 @@ final class ToolCallCodecTests: XCTestCase {
     func testBalancedScannerIgnoresStrings() {
         let s = "prefix {\"tool\":\"x\",\"args\":{\"content\":\"}{\"}}\" } suffix"
         let obj = ToolCallCodec.firstBalancedJSONObject(in: s)
-        XCTAssertEqual(obj, "{\"tool\":\"x\",\"args\":{\"content\":\"}{\"}}\" }")
+        XCTAssertEqual(obj, "{\"tool\":\"x\",\"args\":{\"content\":\"}{\"}}")
     }
 
     func testBalancedScannerReturnsNilOnUnbalanced() {

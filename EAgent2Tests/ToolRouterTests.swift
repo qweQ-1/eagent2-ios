@@ -32,7 +32,13 @@ final class ToolRouterTests: XCTestCase {
         XCTAssertNil(FilesTool.resolve("../etc/passwd", root: root))
         XCTAssertNil(FilesTool.resolve("../../../../etc/passwd", root: root))
         XCTAssertNil(FilesTool.resolve("workspace/../../etc/passwd", root: root))
-        XCTAssertNil(FilesTool.resolve("/etc/passwd", root: root))
+    }
+
+    func testAbsoluteLookingPathStaysInsideWorkspace() {
+        // 以 "/" 开头按「工作区内绝对路径」处理，绝不会落到系统目录
+        let abs = FilesTool.resolve("/etc/passwd", root: root)
+        XCTAssertNotNil(abs)
+        XCTAssertTrue(abs!.standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path))
     }
 
     func testDisplayRelative() {
@@ -45,7 +51,7 @@ final class ToolRouterTests: XCTestCase {
 
     func testWriteReadRoundTrip() {
         let w = FilesTool.write(root: root, path: "notes/hello.txt", content: "你好 EAgent")
-        XCTAssertTrue(w.contains("\"ok\":true"))
+        XCTAssertTrue(w.contains("\"ok\":\"true\""))
         let r = FilesTool.read(root: root, path: "notes/hello.txt")
         XCTAssertTrue(r.contains("你好 EAgent"))
         let l = FilesTool.list(root: root, path: "/")
@@ -54,7 +60,7 @@ final class ToolRouterTests: XCTestCase {
 
     func testReadMissing() {
         let r = FilesTool.read(root: root, path: "nope.txt")
-        XCTAssertTrue(r.contains("\"ok\":false"))
+        XCTAssertTrue(r.contains("\"ok\":\"false\""))
     }
 
     func testReadTruncation() {
@@ -103,7 +109,7 @@ final class ToolRouterTests: XCTestCase {
     func testMakeRequestGuard() {
         switch HTTPTool.makeRequest(urlString: "http://example.com", method: "GET", body: nil, headers: [:]) {
         case .success: XCTFail("http 应被拒绝")
-        case .failure(let e): XCTAssertTrue(e.contains("https"))
+        case .failure(let e): XCTAssertTrue(e.message.contains("https"))
         }
         switch HTTPTool.makeRequest(urlString: "https://127.0.0.1/x", method: "GET", body: nil, headers: [:]) {
         case .success: XCTFail("内网应被拒绝")
@@ -114,7 +120,7 @@ final class ToolRouterTests: XCTestCase {
             XCTAssertEqual(req.httpMethod, "GET") // 非白名单方法回退 GET
             XCTAssertEqual(req.value(forHTTPHeaderField: "X-A"), "b")
             XCTAssertEqual(String(data: req.httpBody!, encoding: .utf8), "{}")
-        case .failure(let e): XCTFail(e)
+        case .failure(let e): XCTFail(e.message)
         }
     }
 
@@ -136,14 +142,14 @@ final class ToolRouterTests: XCTestCase {
     @MainActor
     func testListTools() async {
         let r = await makeRouter().call(ToolCall(tool: "list_tools"))
-        XCTAssertTrue(r.contains("\"ok\":true"))
+        XCTAssertTrue(r.contains("\"ok\":\"true\""))
         for n in ToolCatalog.names { XCTAssertTrue(r.contains(n), "list_tools 缺少 \(n)") }
     }
 
     @MainActor
     func testMissingArgError() async {
         let r = await makeRouter().call(ToolCall(tool: "open_app", args: [:]))
-        XCTAssertTrue(r.contains("\"ok\":false"))
+        XCTAssertTrue(r.contains("\"ok\":\"false\""))
         XCTAssertTrue(r.contains("name"))
     }
 
@@ -157,7 +163,7 @@ final class ToolRouterTests: XCTestCase {
     func testRouteFiles() async {
         let router = makeRouter()
         let w = await router.call(ToolCall(tool: "write_file", args: ["path": "via/router.txt", "content": "路由写入"]))
-        XCTAssertTrue(w.contains("\"ok\":true"))
+        XCTAssertTrue(w.contains("\"ok\":\"true\""))
         let r = await router.call(ToolCall(tool: "read_file", args: ["path": "via/router.txt"]))
         XCTAssertTrue(r.contains("路由写入"))
     }

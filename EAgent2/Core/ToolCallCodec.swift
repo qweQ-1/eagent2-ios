@@ -114,15 +114,17 @@ public enum ToolCallCodec {
     }
 
     static func stringify(_ v: Any) -> String {
-        switch v {
-        case let s as String: return s
-        case let n as NSNumber: return n.stringValue
-        case let b as Bool: return b ? "true" : "false"
-        default:
-            if let d = try? JSONSerialization.data(withJSONObject: v), let s = String(data: d, encoding: .utf8) {
-                return s
+        if let s = v as? String { return s }
+        if let n = v as? NSNumber {
+            // JSON 的 true/false 是 CFBoolean，不能按数字输出 "1"/"0"
+            if CFGetTypeID(n as CFTypeRef) == CFBooleanGetTypeID() {
+                return n.boolValue ? "true" : "false"
             }
-            return String(describing: v)
+            return n.stringValue
         }
+        if let d = try? JSONSerialization.data(withJSONObject: v), let s = String(data: d, encoding: .utf8) {
+            return s
+        }
+        return String(describing: v)
     }
 }

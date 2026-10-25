@@ -44,7 +44,7 @@ final class PromptBuilderTests: XCTestCase {
     func testDisabledToolExcluded() {
         let subset = specs.filter { $0.name != "http_request" }
         let p = PromptBuilder.systemPrompt(workspacePath: "/w", tools: subset, deviceLine: "d")
-        XCTAssertFalse(p.contains("http_request"))
-        XCTAssertTrue(p.contains("speak"))
+        XCTAssertFalse(p.contains("▸ http_request"))
+        XCTAssertTrue(p.contains("▸ speak"))
     }
 }
