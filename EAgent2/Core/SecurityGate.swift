@@ -64,7 +64,8 @@ public final class SecurityGate: ObservableObject {
         c.resume(returning: decision)
     }
 
-    static func prettyArgs(_ args: [String: String]) -> String {
+    /// 纯函数，不依赖 actor 状态 → 必须标 nonisolated，否则非隔离上下文（测试）无法调用。
+    nonisolated static func prettyArgs(_ args: [String: String]) -> String {
         let body = args.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value)" }.joined(separator: "\n")
         return body.isEmpty ? "（无参数）" : body
     }
