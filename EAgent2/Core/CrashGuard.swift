@@ -1,6 +1,35 @@
 import Foundation
 import UIKit
 
+// MARK: - 文件级工具（供 C 风格回调使用，不依赖 actor 隔离）
+
+/// App 沙盒 Documents 目录。
+private func eagentDocsURL() -> URL {
+    FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        ?? URL(fileURLWithPath: NSTemporaryDirectory())
+}
+
+/// 写文本到 Documents。
+private func eagentWrite(_ name: String, _ text: String) {
+    let url = eagentDocsURL().appendingPathComponent(name)
+    try? text.write(to: url, atomically: true, encoding: .utf8)
+}
+
+/// 崩溃时的全局落盘位置（供 C 风格的异常处理器访问，不能用捕获闭包）。
+nonisolated(unsafe) private var crashSink: ((String) -> Void)?
+
+/// 顶层 C 风格异常处理器：NSSetUncaughtExceptionHandler 不接受带捕获的闭包。
+private func eagentExceptionHandler(_ exception: NSException) {
+    let text = """
+    时间：\(ISO8601DateFormatter().string(from: Date()))
+    异常：\(exception.name.rawValue)
+    原因：\(exception.reason ?? "unknown")
+    调用栈：
+    \(exception.callStackSymbols.joined(separator: "\n"))
+    """
+    crashSink?(text)
+}
+
 /// 崩溃防护与现场取证。
 ///
 /// 1) 捕获 ObjC 侧未处理异常（Swift trap 抓不到，但 UIKit/ObjC 层的 NSException 可以）；
@@ -20,16 +49,8 @@ public enum CrashGuard {
         guard !installed else { return }
         installed = true
 
-        NSSetUncaughtExceptionHandler { exception in
-            let text = """
-            时间：\(ISO8601DateFormatter().string(from: Date()))
-            异常：\(exception.name.rawValue)
-            原因：\(exception.reason ?? "unknown")
-            调用栈：
-            \(exception.callStackSymbols.joined(separator: "\n"))
-            """
-            write(crashFile, text)
-        }
+        crashSink = { text in eagentWrite(crashFile, text) }
+        NSSetUncaughtExceptionHandler(eagentExceptionHandler)
 
         // 内存告警 → 广播给网页层，让它主动释放/重载
         NotificationCenter.default.addObserver(
@@ -44,18 +65,12 @@ public enum CrashGuard {
 
     // MARK: - 会话标记
 
-    private static func docs() -> URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-    }
-
     private static func write(_ name: String, _ text: String) {
-        let url = docs().appendingPathComponent(name)
-        try? text.write(to: url, atomically: true, encoding: .utf8)
+        eagentWrite(name, text)
     }
 
     private static func read(_ name: String) -> String? {
-        let url = docs().appendingPathComponent(name)
+        let url = eagentDocsURL().appendingPathComponent(name)
         guard let s = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         return s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : s
     }
@@ -68,7 +83,7 @@ public enum CrashGuard {
 
     /// App 正常进入后台/退出时清除标记。
     public static func markCleanExit() {
-        try? FileManager.default.removeItem(at: docs().appendingPathComponent(sessionFile))
+        try? FileManager.default.removeItem(at: eagentDocsURL().appendingPathComponent(sessionFile))
     }
 
     /// 上次是否异常退出（true = 上次没有走到正常收尾）。
