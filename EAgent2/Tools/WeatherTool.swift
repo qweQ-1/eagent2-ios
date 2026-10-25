@@ -78,13 +78,12 @@ public final class LocationProvider: NSObject, CLLocationManagerDelegate {
 
     public func current(timeout: TimeInterval = 15) async -> String {
         let status = manager.authorizationStatus
+        if status == .notDetermined {
+            manager.requestWhenInUseAuthorization()
+            return FilesTool.err("已请求定位权限，请在系统弹窗中允许「使用期间定位」后重试")
+        }
         guard status == .authorizedWhenInUse || status == .authorizedAlways else {
-            if status == .notDetermined {
-                manager.requestWhenInUseAuthorization()
-            }
-            if manager.authorizationStatus != .authorizedWhenInUse, manager.authorizationStatus != .authorizedAlways {
-                return FilesTool.err("未获得定位权限，请在 设置 → EAgent 中允许「使用期间定位」")
-            }
+            return FilesTool.err("未获得定位权限，请在 设置 → EAgent 中允许「使用期间定位」")
         }
         if let last = last {
             return ok(last)
