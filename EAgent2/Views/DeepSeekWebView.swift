@@ -70,10 +70,8 @@ struct DeepSeekWebView: UIViewRepresentable {
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
         uiView.stopLoading()
         uiView.navigationDelegate = nil
-        let controller = uiView.configuration.userContentController
-        controller.removeScriptMessageHandler(forName: "eagent")
-        controller.removeAllUserScripts()
-        uiView.configuration = WKWebViewConfiguration()
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "eagent")
+        uiView.configuration.userContentController.removeAllUserScripts()
         coordinator.bridge.detach()
     }
 }

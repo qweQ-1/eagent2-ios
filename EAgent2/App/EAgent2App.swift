@@ -37,7 +37,7 @@ struct EAgent2App: App {
                     bridge.handleMemoryWarning()
                 }
         }
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
             // 进入后台属于正常收尾（不算闪退）
             if phase == .background { CrashGuard.markCleanExit() }
         }
