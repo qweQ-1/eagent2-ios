@@ -51,7 +51,7 @@ public enum HTTPTool {
     public static func run(url: String, method: String, body: String?, headers: [String: String], maxChars: Int = 8000) async -> String {
         var req: URLRequest
         switch makeRequest(urlString: url, method: method, body: body, headers: headers) {
-        case .failure(let e): return FilesTool.err(e)
+        case .failure(let e): return FilesTool.err(e.message)
         case .success(let r): req = r
         }
         do {

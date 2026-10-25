@@ -118,7 +118,7 @@ public final class LocationProvider: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+    public nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         let msg = "定位失败：" + error.localizedDescription
         Task { @MainActor [weak self] in
             guard let self else { return }

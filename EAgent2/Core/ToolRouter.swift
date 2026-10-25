@@ -107,7 +107,7 @@ public final class ToolRouter {
 
         case "http_request":
             guard let u = a["url"], !u.isEmpty else { return FilesTool.err("缺少参数 url") }
-            let headers = parseHeaders(a["headers"])
+            let headers = Self.parseHeaders(a["headers"])
             return await HTTPTool.run(url: u, method: a["method"] ?? "GET", body: a["body"], headers: headers)
 
         case "run_shortcut":
@@ -128,7 +128,7 @@ public final class ToolRouter {
         }
     }
 
-    static func parseHeaders(_ s: String?) -> [String: String] {
+    nonisolated static func parseHeaders(_ s: String?) -> [String: String] {
         guard let s = s, !s.trimmingCharacters(in: .whitespaces).isEmpty,
               let data = s.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return [:] }
