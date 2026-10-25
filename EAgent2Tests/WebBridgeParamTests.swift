@@ -62,8 +62,13 @@ final class WebBridgeParamTests: XCTestCase {
 
     /// 注入脚本里不能出现会提前结束 Swift raw string 的序列。
     func testBridgeScriptHasNoRawStringBreakers() {
-        XCTAssertFalse(BridgeScript.source.contains(#"\"#""#))
-        XCTAssertFalse(BridgeScript.source.contains(#"\#(""#))
+        // Swift raw string (#""" ... """#) 里出现 """ 会截断；出现 \#( 会触发插值
+        let tripleQuote = "\"\"\""
+        let interpolation = "\\" + "#("
+        XCTAssertFalse(BridgeScript.source.contains(tripleQuote),
+                       "注入脚本里出现了三引号，会截断 Swift raw string")
+        XCTAssertFalse(BridgeScript.source.contains(interpolation),
+                       "注入脚本里出现了插值序列，会破坏 Swift raw string")
     }
 
     /// 注入脚本必须包含参数提取逻辑，且不能退化成直接使用 arguments.payload。
