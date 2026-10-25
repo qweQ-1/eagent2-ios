@@ -42,13 +42,14 @@ public enum ToolCallCodec {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return .none }
 
-        // 1) 围栏块
-        if let open = trimmed.range(of: "```" + fenceTag, options: [.caseInsensitive]) {
-            let rest = trimmed[open.upperBound...]
-            if let close = rest.range(of: "```") {
-                let inner = String(rest[..<close.lowerBound])
-                return decode(inner)
-            }
+        // 1) 围栏块：逐个尝试，优先取**工具名有效**的那个。
+        //    原因：回复里可能同时出现「回显的系统提示词示例」和「真正的工具块」，
+        //    取第一个会读到提示词里的 {"tool":"工具名"} → 工具名无效 → 工具用不了。
+        if let block = lastValidFencedBlock(in: trimmed) {
+            return decode(block)
+        }
+        if let block = lastFencedBlock(in: trimmed) {
+            return decode(block)
         }
 
         // 2) 兜底：全文最后一个平衡 JSON 对象且含 "tool"
@@ -89,6 +90,51 @@ public enum ToolCallCodec {
             }
         }
         return last
+    }
+
+    /// 取出最后一个「工具名合法」的 ```eagent ... ``` 围栏块内容。
+    /// 若没有任何合法块，返回 nil（交由调用方走其它解析路径）。
+    static func lastValidFencedBlock(in text: String) -> String? {
+        let tag = fenceTag
+        var searchStart = text.startIndex
+        var fallback: String?
+        while let open = text.range(of: "```" + tag, options: [.caseInsensitive], range: searchStart..<text.endIndex) {
+            let rest = text[open.upperBound...]
+            guard let close = rest.range(of: "```") else { break }
+            let inner = String(rest[..<close.lowerBound])
+            fallback = inner
+            if let tool = extractToolName(from: inner), ToolCatalog.names.contains(tool) {
+                return inner
+            }
+            searchStart = close.upperBound
+        }
+        _ = fallback
+        return nil
+    }
+
+    /// 从一段 JSON 文本里粗略取出 tool 字段的值。
+    static func extractToolName(from json: String) -> String? {
+        guard let data = json.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let t = obj["tool"] as? String, !t.isEmpty else { return nil }
+        return t
+    }
+
+    /// 取出最后一个 ```eagent ... ``` 围栏块的内容。
+    static func lastFencedBlock(in text: String) -> String? {
+        let tag = fenceTag
+        var searchStart = text.startIndex
+        var result: String?
+        while let open = text.range(of: "```" + tag, options: [.caseInsensitive], range: searchStart..<text.endIndex) {
+            let rest = text[open.upperBound...]
+            if let close = rest.range(of: "```") {
+                result = String(rest[..<close.lowerBound])
+                searchStart = close.upperBound
+            } else {
+                break
+            }
+        }
+        return result
     }
 
     /// 从字符串中取出第一个括号配平的 JSON 对象（忽略字符串内的括号与转义）

@@ -29,13 +29,27 @@ final class ToolCallCodecReplyTests: XCTestCase {
         XCTAssertEqual(call.args["title"], "测试")
     }
 
-    /// 关键回归：从「正文在前、工具块在后」的消息里取到的是后面的真工具块。
-    func testPrefersLastJSONObject() {
+    /// 关键回归：从「正文在前、工具块在后」的消息里取到的是后面的真工具块，
+    /// 而不是系统提示词示例里的 {"tool":"工具名"}。
+    func testPrefersValidToolBlockOverPromptExample() {
         let reply = promptExample + "\n\n```eagent\n{\"tool\":\"speak\",\"args\":{\"text\":\"你好\"}}\n```"
         guard case .found(let call) = ToolCallCodec.parse(from: reply) else {
             return XCTFail("应解析出工具调用")
         }
-        XCTAssertEqual(call.tool, "speak", "应取到最后的 JSON，而不是提示词里的示例")
+        XCTAssertEqual(call.tool, "speak", "应取到合法的工具块，而不是提示词里的示例")
+    }
+
+    /// 只有提示词示例时，不应解析出一个无效工具名（引擎层会据此报错）。
+    func testPromptExampleAloneYieldsInvalidTool() {
+        switch ToolCallCodec.parse(from: promptExample) {
+        case .none:
+            break  // 解析不出工具块也可以
+        case .found(let call):
+            XCTAssertFalse(ToolCatalog.names.contains(call.tool),
+                           "不应从提示词示例里解析出工具名：\(call.tool)")
+        case .malformed:
+            break
+        }
     }
 
     func testLastBalancedJSONObjectPicksLast() {

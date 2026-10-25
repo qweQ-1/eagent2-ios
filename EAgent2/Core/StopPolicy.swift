@@ -113,13 +113,18 @@ public enum StopPolicy {
     }
 
     /// 工具结果是否表示失败。
+    /// 注意：FilesTool 生成的 JSON 里 ok 是**字符串** "true"/"false"，不是布尔值，
+    /// 所以三种形态都要兼容。
     public static func isFailedResult(_ result: String) -> Bool {
         guard let data = result.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return false
         }
-        if let ok = obj["ok"] as? NSNumber { return !ok.boolValue }
-        if let ok = obj["ok"] as? Bool { return !ok }
+        if let s = obj["ok"] as? String {
+            return s.lowercased() == "false"
+        }
+        if let b = obj["ok"] as? Bool { return !b }
+        if let n = obj["ok"] as? NSNumber { return !n.boolValue }
         return false
     }
 
