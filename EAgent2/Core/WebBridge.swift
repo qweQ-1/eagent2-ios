@@ -65,26 +65,39 @@ public final class WebBridge: ObservableObject {
 
     /// 调用注入的桥函数。
     ///
-    /// 用 callAsyncJavaScript + arguments 传参，而不是把参数拼进 JS 源码字符串：
-    /// 1) 安全——用户任务文本里若含引号/换行/恶意片段，拼字符串会导致 JS 注入或语法错误；
-    /// 2) 稳定——大段中文文本走 arguments 通道比塞进源码更不容易触发求值失败。
+    /// 传参方式：把 payload 作为 JSON 字面量嵌入调用表达式。
+    ///
+    /// 为什么不直接用 callAsyncJavaScript 的 arguments：
+    /// WebKit 的 `arguments` 在 JS 侧的实际形态随版本变化（可能是数组、字典或嵌套结构），
+    /// 很容易取到 undefined，进而把字符串 "undefined" 填进 DeepSeek 输入框。
+    /// 这里用 JSONSerialization 严格转义后再嵌入，是确定性的做法。
     private func callBridge(_ fn: String, _ arg: String? = nil) async -> Any? {
         guard let wv = webView else { return nil }
-        let body: String
-        let arguments: [String: Any]
+        let call: String
         if let arg {
-            body = "return await EAgentBridge.\(fn)(arguments.payload)"
-            arguments = ["payload": arg]
+            guard let literal = jsonLiteral(arg) else {
+                lastError = "参数编码失败"
+                return nil
+            }
+            call = "EAgentBridge.\(fn)(\(literal))"
         } else {
-            body = "return await EAgentBridge.\(fn)()"
-            arguments = [:]
+            call = "EAgentBridge.\(fn)()"
         }
         do {
-            return try await wv.callAsyncJavaScript(body, arguments: arguments, in: nil, contentWorld: .page)
+            return try await wv.evaluateJavaScript(call)
         } catch {
             lastError = "JS 执行失败：\(error.localizedDescription)"
             return nil
         }
+    }
+
+    /// 把任意字符串编码成安全的 JSON 字面量（含引号/换行/反斜杠/控制字符都能正确转义）。
+    private func jsonLiteral(_ s: String) -> String? {
+        guard let data = try? JSONSerialization.data(withJSONObject: [s]),
+              let arr = String(data: data, encoding: .utf8),
+              arr.hasPrefix("["), arr.hasSuffix("]") else { return nil }
+        // data 形如 ["..."]，去掉外层方括号得到字面量
+        return String(arr.dropFirst().dropLast())
     }
 
     // MARK: - 状态
@@ -123,6 +136,9 @@ public final class WebBridge: ObservableObject {
         public var ok: Bool
         public var clicked: Bool
         public var leftChars: Int
+        /// 实际写入输入框的字符数（用于校验是否真的把文本送进去了）
+        public var sentChars: Int
+        public var why: String?
     }
 
     public func send(text: String) async -> SendResult? {
@@ -130,7 +146,9 @@ public final class WebBridge: ObservableObject {
         return SendResult(
             ok: (d["ok"] as? NSNumber)?.boolValue ?? false,
             clicked: (d["clicked"] as? NSNumber)?.boolValue ?? false,
-            leftChars: (d["leftChars"] as? NSNumber)?.intValue ?? 0
+            leftChars: (d["leftChars"] as? NSNumber)?.intValue ?? 0,
+            sentChars: (d["sent"] as? NSNumber)?.intValue ?? 0,
+            why: d["why"] as? String
         )
     }
 

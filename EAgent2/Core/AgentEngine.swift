@@ -107,7 +107,18 @@ public final class AgentEngine: ObservableObject {
                 return
             }
             if !sr.ok {
-                finishFailed("无法在 DeepSeek 网页输入/发送：可能未登录或页面发生了变化")
+                let reason: String
+                switch sr.why {
+                case "no-arg":      reason = "消息内容未能正确传给网页（参数编码异常）"
+                case "no-textarea": reason = "找不到 DeepSeek 的输入框，页面可能没加载完或改版了"
+                default:            reason = "无法在 DeepSeek 网页输入/发送：可能未登录或页面发生了变化"
+                }
+                finishFailed(reason)
+                return
+            }
+            // 校验确实把文本写进去了：防止「填进去的是 undefined」这类静默失败
+            if sr.sentChars == 0 && !prompt.isEmpty {
+                finishFailed("消息没有真正写入 DeepSeek 输入框（可能是页面结构变化或参数传递失败）")
                 return
             }
             // 防御：输入框仍有内容说明按钮点击没生效，补一记回车

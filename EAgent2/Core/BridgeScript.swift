@@ -12,6 +12,32 @@ public enum BridgeScript {
   function post(msg) {
     try { window.webkit.messageHandlers.eagent.postMessage(msg); } catch (e) {}
   }
+
+  // 从 callAsyncJavaScript 的 arguments 里提取文本。
+  // WebKit 传入的 arguments 形态不固定（可能是数组、可能是字典、也可能是 [字典]），
+  // 这里逐层兼容，避免取到 undefined 后把字符串 "undefined" 填进输入框。
+  function pickText(a) {
+    if (a === undefined || a === null) { return null; }
+    if (typeof a === 'string') { return a; }
+    if (typeof a === 'number' || typeof a === 'boolean') { return String(a); }
+    if (Object.prototype.toString.call(a) === '[object Array]') {
+      for (var i = 0; i < a.length; i++) {
+        var t = pickText(a[i]);
+        if (t !== null) { return t; }
+      }
+      return null;
+    }
+    if (typeof a === 'object') {
+      if (typeof a.payload === 'string') { return a.payload; }
+      if (typeof a.text === 'string') { return a.text; }
+      for (var k in a) {
+        if (!Object.prototype.hasOwnProperty.call(a, k)) { continue; }
+        var v = pickText(a[k]);
+        if (v !== null) { return v; }
+      }
+    }
+    return null;
+  }
   function nowLogin() {
     try {
       var t = null;
@@ -144,7 +170,9 @@ public enum BridgeScript {
         replyLen: lastReplyText().length
       });
     },
-    send: function (text) {
+    send: function (arg) {
+      var text = pickText(arg);
+      if (text === null) { return JSON.stringify({ ok: false, why: 'no-arg' }); }
       var ta = findTextarea();
       if (!ta) { return JSON.stringify({ ok: false, why: 'no-textarea' }); }
       setValue(ta, text);
@@ -153,7 +181,7 @@ public enum BridgeScript {
       var clicked = false;
       if (btn) { try { btn.click(); clicked = true; } catch (e) {} }
       if (!clicked) { pressEnter(ta); }
-      return JSON.stringify({ ok: true, clicked: clicked, leftChars: (ta.value || '').length });
+      return JSON.stringify({ ok: true, clicked: clicked, leftChars: (ta.value || '').length, sent: text.length });
     },
     pressEnter: function () {
       var ta = findTextarea();
