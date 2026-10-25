@@ -3,7 +3,7 @@ import XCTest
 
 final class PromptBuilderTests: XCTestCase {
 
-    private let specs = ToolRouter.specs
+    private let specs = ToolCatalog.all
 
     func testSystemPromptContainsAllTools() {
         let p = PromptBuilder.systemPrompt(workspacePath: "/var/x/workspace", tools: specs, deviceLine: "device-line")

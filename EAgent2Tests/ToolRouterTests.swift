@@ -1,21 +1,23 @@
 import XCTest
 @testable import EAgent2
 
-@MainActor
 final class ToolRouterTests: XCTestCase {
 
     var root: URL!
-    var router: ToolRouter!
 
     override func setUp() {
         super.setUp()
         root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("eagent-test-\(UUID().uuidString)")
-        router = ToolRouter(workspaceURL: root)
     }
 
     override func tearDown() {
         try? FileManager.default.removeItem(at: root)
         super.tearDown()
+    }
+
+    @MainActor
+    private func makeRouter() -> ToolRouter {
+        ToolRouter(workspaceURL: root)
     }
 
     // MARK: 路径安全
@@ -41,7 +43,7 @@ final class ToolRouterTests: XCTestCase {
 
     // MARK: 文件读写
 
-    func testWriteReadRoundTrip() async {
+    func testWriteReadRoundTrip() {
         let w = FilesTool.write(root: root, path: "notes/hello.txt", content: "你好 EAgent")
         XCTAssertTrue(w.contains("\"ok\":true"))
         let r = FilesTool.read(root: root, path: "notes/hello.txt")
@@ -124,31 +126,36 @@ final class ToolRouterTests: XCTestCase {
 
     // MARK: 路由
 
+    @MainActor
     func testUnknownToolError() async {
-        let r = await router.call(ToolCall(tool: "rm_rf", args: [:]))
+        let r = await makeRouter().call(ToolCall(tool: "rm_rf", args: [:]))
         XCTAssertTrue(r.contains("未知工具"))
         XCTAssertTrue(r.contains("list_tools"))
     }
 
+    @MainActor
     func testListTools() async {
-        let r = await router.call(ToolCall(tool: "list_tools"))
+        let r = await makeRouter().call(ToolCall(tool: "list_tools"))
         XCTAssertTrue(r.contains("\"ok\":true"))
-        let names = ToolRouter.specs.map { $0.name }
-        for n in names { XCTAssertTrue(r.contains(n), "list_tools 缺少 \(n)") }
+        for n in ToolCatalog.names { XCTAssertTrue(r.contains(n), "list_tools 缺少 \(n)") }
     }
 
+    @MainActor
     func testMissingArgError() async {
-        let r = await router.call(ToolCall(tool: "open_app", args: [:]))
+        let r = await makeRouter().call(ToolCall(tool: "open_app", args: [:]))
         XCTAssertTrue(r.contains("\"ok\":false"))
         XCTAssertTrue(r.contains("name"))
     }
 
+    @MainActor
     func testFinishMarker() async {
-        let r = await router.call(ToolCall(tool: "finish", args: ["note": "已完成"]))
+        let r = await makeRouter().call(ToolCall(tool: "finish", args: ["note": "已完成"]))
         XCTAssertTrue(r.contains("\"finish\":\"true\""))
     }
 
+    @MainActor
     func testRouteFiles() async {
+        let router = makeRouter()
         let w = await router.call(ToolCall(tool: "write_file", args: ["path": "via/router.txt", "content": "路由写入"]))
         XCTAssertTrue(w.contains("\"ok\":true"))
         let r = await router.call(ToolCall(tool: "read_file", args: ["path": "via/router.txt"]))

@@ -43,11 +43,10 @@ public enum ToolCallCodec {
         if trimmed.isEmpty { return .none }
 
         // 1) 围栏块
-        let lower = trimmed.lowercased()
-        if let open = lower.range(of: "```" + fenceTag) {
-            let afterOpen = trimmed.index(open.upperBound, offsetBy: 0)
-            if let close = trimmed.range(of: "```", range: afterOpen..<trimmed.endIndex) {
-                let inner = String(trimmed[afterOpen..<close.lowerBound])
+        if let open = trimmed.range(of: "```" + fenceTag, options: [.caseInsensitive]) {
+            let rest = trimmed[open.upperBound...]
+            if let close = rest.range(of: "```") {
+                let inner = String(rest[..<close.lowerBound])
                 return decode(inner)
             }
         }

@@ -30,9 +30,9 @@ struct SettingsTabView: View {
                 }
 
                 Section("工具目录") {
-                    Button(showTools ? "收起" : "查看全部 \(ToolRouter.specs.count) 个工具") { showTools.toggle() }
+                    Button(showTools ? "收起" : "查看全部 \(ToolCatalog.all.count) 个工具") { showTools.toggle() }
                     if showTools {
-                        ForEach(ToolRouter.specs, id: \.name) { spec in
+                        ForEach(ToolCatalog.all, id: \.name) { spec in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(spec.name).font(.subheadline.bold())
                                 Text(spec.summary).font(.caption).foregroundColor(.secondary)
