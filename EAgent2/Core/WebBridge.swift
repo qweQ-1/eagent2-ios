@@ -80,7 +80,7 @@ public final class WebBridge: ObservableObject {
             arguments = [:]
         }
         do {
-            return try await wv.callAsyncJavaScript(body, arguments: arguments, in: .page)
+            return try await wv.callAsyncJavaScript(body, arguments: arguments, in: nil, contentWorld: .page)
         } catch {
             lastError = "JS 执行失败：\(error.localizedDescription)"
             return nil
