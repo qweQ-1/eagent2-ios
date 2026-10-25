@@ -51,7 +51,8 @@ final class SecurityGateTests: XCTestCase {
             got = await gate.request(tool: "speak", note: nil, args: ["text": "hi"], index: 1, total: 5)
             exp.fulfill()
         }
-        XCTAssertTrue(await waitForPending(gate, tool: "speak"))
+        let ready = await waitForPending(gate, tool: "speak")
+        XCTAssertTrue(ready)
         gate.resolve(.run)
         await fulfillment(of: [exp], timeout: 5)
         XCTAssertEqual(got, .run)
@@ -68,7 +69,8 @@ final class SecurityGateTests: XCTestCase {
             got = await gate.request(tool: "speak", note: nil, args: [:], index: 1, total: 5)
             exp.fulfill()
         }
-        XCTAssertTrue(await waitForPending(gate, tool: "speak"))
+        let ready = await waitForPending(gate, tool: "speak")
+        XCTAssertTrue(ready)
         gate.resolve(.run)
         gate.resolve(.skip)   // 第二次必须无副作用
         gate.resolve(.abort)
@@ -88,13 +90,15 @@ final class SecurityGateTests: XCTestCase {
             got1 = await gate.request(tool: "first", note: nil, args: [:], index: 1, total: 5)
             exp1.fulfill()
         }
-        XCTAssertTrue(await waitForPending(gate, tool: "first"))
+        let ready1 = await waitForPending(gate, tool: "first")
+        XCTAssertTrue(ready1)
         Task { @MainActor in
             got2 = await gate.request(tool: "second", note: nil, args: [:], index: 2, total: 5)
             exp2.fulfill()
         }
         // 等到第二次请求接管 pending，说明第一个 continuation 已被 abort
-        XCTAssertTrue(await waitForPending(gate, tool: "second"))
+        let ready2 = await waitForPending(gate, tool: "second")
+        XCTAssertTrue(ready2)
         gate.resolve(.run)
         await fulfillment(of: [exp1, exp2], timeout: 5)
         XCTAssertEqual(got1, .abort)
