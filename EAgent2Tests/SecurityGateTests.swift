@@ -23,16 +23,38 @@ final class SecurityGateTests: XCTestCase {
         XCTAssertEqual(SecurityGate.prettyArgs([:]), "（无参数）")
     }
 
+    // MARK: - 辅助
+
+    /// 等待安全门挂起某个工具的审批请求。
+    ///
+    /// 用 pending.tool 作为「continuation 已注册」的可靠信号：
+    /// request() 里设置 pending 与注册 continuation 之间没有 await 点，不会被打断，
+    /// 因此观察到 pending.tool == tool 就意味着 continuation 已经就绪。
+    @MainActor
+    private func waitForPending(_ gate: SecurityGate, tool: String, timeout: TimeInterval = 3) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if gate.pending?.tool == tool { return true }
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+        return gate.pending?.tool == tool
+    }
+
+    // MARK: - 行为
+
     @MainActor
     func testGateResolveSequential() async {
         let gate = SecurityGate()
-        let first = Task { @MainActor in await gate.request(tool: "speak", note: nil, args: ["text": "hi"], index: 1, total: 5) }
-        // 等一下让 pending 出现
-        for _ in 0..<50 where gate.pending == nil { try? await Task.sleep(nanoseconds: 20_000_000) }
-        XCTAssertNotNil(gate.pending)
+        let exp = expectation(description: "gate resolved")
+        var got: GateDecision?
+        Task { @MainActor in
+            got = await gate.request(tool: "speak", note: nil, args: ["text": "hi"], index: 1, total: 5)
+            exp.fulfill()
+        }
+        XCTAssertTrue(await waitForPending(gate, tool: "speak"))
         gate.resolve(.run)
-        let d = await first.value
-        XCTAssertEqual(d, .run)
+        await fulfillment(of: [exp], timeout: 5)
+        XCTAssertEqual(got, .run)
         XCTAssertNil(gate.pending)
     }
 
@@ -40,27 +62,42 @@ final class SecurityGateTests: XCTestCase {
     @MainActor
     func testGateResolveIsIdempotent() async {
         let gate = SecurityGate()
-        let t = Task { @MainActor in await gate.request(tool: "speak", note: nil, args: [:], index: 1, total: 5) }
-        for _ in 0..<50 where gate.pending == nil { try? await Task.sleep(nanoseconds: 20_000_000) }
+        let exp = expectation(description: "gate resolved")
+        var got: GateDecision?
+        Task { @MainActor in
+            got = await gate.request(tool: "speak", note: nil, args: [:], index: 1, total: 5)
+            exp.fulfill()
+        }
+        XCTAssertTrue(await waitForPending(gate, tool: "speak"))
         gate.resolve(.run)
         gate.resolve(.skip)   // 第二次必须无副作用
         gate.resolve(.abort)
-        let d = await t.value
-        XCTAssertEqual(d, .run)
+        await fulfillment(of: [exp], timeout: 5)
+        XCTAssertEqual(got, .run)
     }
 
     /// 上一次请求未收尾就发起新请求：旧请求应被安全地 abort，不能让 continuation 泄漏。
     @MainActor
     func testGateSecondRequestAbortsFirst() async {
         let gate = SecurityGate()
-        let first = Task { @MainActor in await gate.request(tool: "a", note: nil, args: [:], index: 1, total: 5) }
-        for _ in 0..<50 where gate.pending == nil { try? await Task.sleep(nanoseconds: 20_000_000) }
-        let second = Task { @MainActor in await gate.request(tool: "b", note: nil, args: [:], index: 2, total: 5) }
-        for _ in 0..<50 where gate.pending == nil { try? await Task.sleep(nanoseconds: 20_000_000) }
+        let exp1 = expectation(description: "first resolved")
+        let exp2 = expectation(description: "second resolved")
+        var got1: GateDecision?
+        var got2: GateDecision?
+        Task { @MainActor in
+            got1 = await gate.request(tool: "first", note: nil, args: [:], index: 1, total: 5)
+            exp1.fulfill()
+        }
+        XCTAssertTrue(await waitForPending(gate, tool: "first"))
+        Task { @MainActor in
+            got2 = await gate.request(tool: "second", note: nil, args: [:], index: 2, total: 5)
+            exp2.fulfill()
+        }
+        // 等到第二次请求接管 pending，说明第一个 continuation 已被 abort
+        XCTAssertTrue(await waitForPending(gate, tool: "second"))
         gate.resolve(.run)
-        let d1 = await first.value
-        let d2 = await second.value
-        XCTAssertEqual(d1, .abort)
-        XCTAssertEqual(d2, .run)
+        await fulfillment(of: [exp1, exp2], timeout: 5)
+        XCTAssertEqual(got1, .abort)
+        XCTAssertEqual(got2, .run)
     }
 }
